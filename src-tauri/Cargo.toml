@@ -2,7 +2,7 @@
 name = "resoboost"
 version = "0.1.0"
 description = "A Tauri App"
-authors = ["you"]
+authors = ["ed"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -22,4 +22,12 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1.47.1", features = ["full"] }
+lazy_static = "1.5.0"
+futures = "0.3.31"
+url = "2.5.7"
 hickory-resolver = { version = "0.25.2", features = ["backtrace", "dnssec-aws-lc-rs", "dnssec-ring", "h3-aws-lc-rs", "h3-ring", "https-aws-lc-rs", "https-ring", "quic-aws-lc-rs", "quic-ring", "rustls-platform-verifier", "serde", "tls-aws-lc-rs", "tls-ring", "webpki-roots"] }
+
+[features]
+# this feature is used for production builds or when `devPath` points to the filesystem
+custom-protocol = ["tauri/custom-protocol"]
