@@ -3488,12 +3488,16 @@ dependencies = [
 name = "resoboost"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "hickory-resolver",
+ "lazy_static",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -4633,7 +4637,9 @@ dependencies = [
  "io-uring",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "slab",
  "socket2 0.6.0",
  "tokio-macros",
