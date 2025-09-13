@@ -8,6 +8,7 @@ use std::time::Instant;
 use futures::future::join_all;
 use url::Url;
 use tokio::sync::Semaphore;
+use tokio::time::timeout;
 use tracing::{error, info, warn};
 use idna::domain_to_ascii;
 use std::net::IpAddr;
@@ -15,6 +16,7 @@ use std::sync::Arc as StdArc;
 
 mod servers;
 pub use servers::get_servers;
+use servers::set_servers as set_servers_inner;
 mod tls_hosts;
 
 use crate::dns_tester::tls_hosts::TLS_HOST_MAP;
@@ -25,14 +27,31 @@ pub async fn init_configs() {
     init_servers();
     init_tls_hosts();
 
+    // Kick off remote updates in background to avoid blocking startup
     let dns_list_url =
-        "https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/main/servers.txt";
-    if let Err(e) = update_servers_from_url(dns_list_url).await {
-        warn!("Could not update DNS servers from URL: {}", e);
-    }
-    if let Err(e) = update_tls_hosts_from_url().await {
-        warn!("Could not update TLS hosts from URL: {}", e);
-    }
+        "https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/main/servers.txt".to_string();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = update_servers_from_url(&dns_list_url).await {
+            warn!("Could not update DNS servers from URL: {}", e);
+        }
+    });
+
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = update_tls_hosts_from_url().await {
+            warn!("Could not update TLS hosts from URL: {}", e);
+        }
+    });
+}
+
+#[tauri::command]
+pub async fn get_dns_servers() -> Vec<String> {
+    get_servers().await
+}
+
+#[tauri::command]
+pub async fn set_dns_servers(servers: Vec<String>) -> Result<(), String> {
+    set_servers_inner(servers).await;
+    Ok(())
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DnsTestResult {
@@ -87,10 +106,14 @@ pub async fn perform_dns_benchmark(
         domain_to_ascii(&domain_or_ip).unwrap()
     };
 
-    let servers_list = match custom_servers {
+    let mut servers_list = match custom_servers {
         Some(s) => s,
         None => get_servers().await,
     };
+    // Soft cap to avoid extremely long runs when user has a huge list
+    if servers_list.len() > 120 {
+        servers_list.truncate(120);
+    }
     let mut tasks = Vec::new();
     let sem = StdArc::new(Semaphore::new(10));
 
@@ -172,8 +195,8 @@ async fn benchmark_single_server(
         if is_ip {
             // Proper reverse lookup for IPs
             match query.parse::<IpAddr>() {
-                Ok(ip) => match resolver.reverse_lookup(ip).await {
-                    Ok(lookup) => {
+                Ok(ip) => match timeout(std::time::Duration::from_secs(timeout_secs), resolver.reverse_lookup(ip)).await {
+                    Ok(Ok(lookup)) => {
                         sample_success = !lookup.iter().next().is_none();
                         #[allow(unused_variables)]
                         let _ = {
@@ -183,8 +206,12 @@ async fn benchmark_single_server(
                             if lookup.is_secure() { dnssec_any_secure = true; }
                         };
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         last_error = Some(e.to_string());
+                    }
+                    Err(_) => {
+                        // timeout
+                        if last_error.is_none() { last_error = Some("Timeout".to_string()); }
                     }
                 },
                 Err(e) => {
@@ -192,50 +219,22 @@ async fn benchmark_single_server(
                 }
             }
         } else {
-            // For domains, query A and AAAA
-            match resolver.lookup(&query, RecordType::A).await {
-                Ok(lookup) => {
-                    let mut v4: Vec<String> = lookup
-                        .record_iter()
-                        .filter_map(|r| r.data().as_a().map(|ip| ip.to_string()))
-                        .collect();
-                    if !v4.is_empty() {
-                        sample_success = true;
-                        ipv4_all.append(&mut v4);
+            // For domains, prefer a single lookup_ip (gathers A/AAAA) with a hard timeout
+            match timeout(std::time::Duration::from_secs(timeout_secs), resolver.lookup_ip(&query)).await {
+                Ok(Ok(lookup)) => {
+                    let mut v4: Vec<String> = Vec::new();
+                    let mut v6: Vec<String> = Vec::new();
+                    for ip in lookup.iter() {
+                        if ip.is_ipv4() { v4.push(ip.to_string()); } else { v6.push(ip.to_string()); }
                     }
-                    // Count as DNSSEC validated if this lookup was secure (when feature enabled)
-                    #[allow(unused_variables)]
-                    let _ = {
-                        #[cfg(any())]
-                        if lookup.is_secure() { dnssec_any_secure = true; }
-                    };
+                    if !v4.is_empty() { sample_success = true; ipv4_all.append(&mut v4); }
+                    if !v6.is_empty() { sample_success = true; ipv6_all.append(&mut v6); }
                 }
-                Err(e) => {
-                    last_error = Some(e.to_string());
+                Ok(Err(e)) => {
+                    if last_error.is_none() { last_error = Some(e.to_string()); }
                 }
-            }
-
-            match resolver.lookup(&query, RecordType::AAAA).await {
-                Ok(lookup) => {
-                    let mut v6: Vec<String> = lookup
-                        .record_iter()
-                        .filter_map(|r| r.data().as_aaaa().map(|ip| ip.to_string()))
-                        .collect();
-                    if !v6.is_empty() {
-                        sample_success = true;
-                        ipv6_all.append(&mut v6);
-                    }
-                    #[allow(unused_variables)]
-                    let _ = {
-                        #[cfg(any())]
-                        if lookup.is_secure() { dnssec_any_secure = true; }
-                    };
-                }
-                Err(e) => {
-                    // preserve first error if any
-                    if last_error.is_none() {
-                        last_error = Some(e.to_string());
-                    }
+                Err(_) => {
+                    if last_error.is_none() { last_error = Some("Timeout".to_string()); }
                 }
             }
         }
@@ -261,6 +260,9 @@ async fn benchmark_single_server(
             .sum::<f64>()
             / latencies_ms.len() as f64;
         Some(mad)
+    } else if latencies_ms.len() == 1 {
+        // With a single sample, define jitter as 0 instead of null for clearer UI
+        Some(0.0)
     } else {
         None
     };
@@ -303,31 +305,76 @@ pub async fn build_resolver_for_server(
     let mut opts = ResolverOpts::default();
     opts.timeout = std::time::Duration::from_secs(timeout_secs);
     opts.validate = true;
-    opts.attempts = 3;
+    // Reduce retries to avoid long stalls across many servers
+    opts.attempts = 1;
     opts.cache_size = 512;
 
     let config = if server_address.starts_with("https://") || server_address.starts_with("h3://") {
+        // Parse full URL, capture host/port/path, and build DoH/H3 with SNI + path
         let is_h3 = server_address.starts_with("h3://");
-        // Treat h3 servers as DoH endpoints; strip the scheme for URL parsing
-        let url_str = if is_h3 { &server_address[5..] } else { server_address };
-        let url = Url::parse(url_str)?;
-        let host = url.host_str().ok_or("No host in URL")?.to_string();
+        let url = Url::parse(server_address)?;
+        let host_raw = url.host_str().ok_or("No host in URL")?.to_string();
         let port = url.port().unwrap_or(443);
-        let sys_resolver = Resolver::builder_with_config(
-            ResolverConfig::default(),
-            TokioConnectionProvider::default(),
-        )
-        .build();
-        let response = sys_resolver.lookup_ip(&host).await?;
-        let ips: Vec<IpAddr> = response.iter().collect();
-        if is_h3 {
-            warn!("H3 treated as HTTPS; ensure h3 feature enabled if needed.");
+
+        // Build endpoint path (path + optional query); default to /dns-query if empty
+        let mut endpoint = url.path().to_string();
+        if let Some(q) = url.query() {
+            if !endpoint.is_empty() {
+                endpoint.push('?');
+                endpoint.push_str(q);
+            }
         }
-        ResolverConfig::from_parts(
-            None,
-            vec![],
-            NameServerConfigGroup::from_ips_https(&ips, port, host, true),
-        )
+        if endpoint.is_empty() || endpoint == "/" {
+            endpoint = "/dns-query".to_string();
+        }
+
+        // Determine SNI name and IPs for the target host
+        let (tls_dns_name, ips): (String, Vec<IpAddr>) = if let Ok(ip) = host_raw.parse::<IpAddr>() {
+            // IP-based DoH/H3: use TLS_HOST_MAP to get SNI name when possible
+            let tls_name = match TLS_HOST_MAP.get() {
+                Some(cell) => {
+                    let map = cell.read().await;
+                    map.get(&ip.to_string()).cloned().unwrap_or_else(|| {
+                        warn!(
+                            "No TLS host map for IP: {}. Using IP as SNI name; TLS may fail.",
+                            host_raw
+                        );
+                        host_raw.clone()
+                    })
+                }
+                None => {
+                    warn!("TLS host map not initialized. Using IP as SNI name.");
+                    host_raw.clone()
+                }
+            };
+            (tls_name, vec![ip])
+        } else {
+            // Domain host: SNI is host itself; resolve to IPs with system resolver
+            let sys_resolver = Resolver::builder_with_config(
+                ResolverConfig::default(),
+                TokioConnectionProvider::default(),
+            )
+            .build();
+            let response = sys_resolver.lookup_ip(&host_raw).await?;
+            let ips: Vec<IpAddr> = response.iter().collect();
+            (host_raw.clone(), ips)
+        };
+
+        // Build NameServerConfigGroup (HTTPS or H3), then set custom endpoint path
+        let use_h3 = is_h3 && cfg!(not(target_os = "windows"));
+        if is_h3 && !use_h3 {
+            warn!("H3 requested but not enabled on this platform; falling back to HTTPS");
+        }
+        let mut group = if use_h3 {
+            NameServerConfigGroup::from_ips_h3(&ips, port, tls_dns_name, true)
+        } else {
+            NameServerConfigGroup::from_ips_https(&ips, port, tls_dns_name, true)
+        };
+        for ns in group.iter_mut() {
+            ns.http_endpoint = Some(endpoint.clone());
+        }
+
+        ResolverConfig::from_parts(None, vec![], group)
     } else if let Some(stripped) = server_address.strip_prefix("tls://") {
         let (host_str, port) = stripped.split_once(':').unwrap_or((stripped, "853"));
         let port_num: u16 = port.parse()?;
@@ -374,7 +421,27 @@ pub async fn build_resolver_for_server(
         let (host_str, port) = stripped.split_once(':').unwrap_or((stripped, "853"));
         let port_num: u16 = port.parse()?;
 
-        let tls_dns_name = host_str.to_string();
+        // Use TLS host mapping for QUIC as well when given an IP
+        let tls_dns_name = if let Ok(ip) = host_str.parse::<IpAddr>() {
+            match TLS_HOST_MAP.get() {
+                Some(cell) => {
+                    let map = cell.read().await;
+                    map.get(&ip.to_string()).cloned().unwrap_or_else(|| {
+                        warn!(
+                            "No TLS host map for IP: {}. Using IP as name, may fail.",
+                            host_str
+                        );
+                        host_str.to_string()
+                    })
+                }
+                None => {
+                    warn!("TLS host map not initialized. Using IP as TLS name.");
+                    host_str.to_string()
+                }
+            }
+        } else {
+            host_str.to_string()
+        };
 
         let ips = if let Ok(ip) = host_str.parse::<IpAddr>() {
             vec![ip]
