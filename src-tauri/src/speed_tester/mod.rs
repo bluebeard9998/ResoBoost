@@ -1,11 +1,10 @@
 use crate::dns_tester::{build_resolver_for_server, get_servers};
-use futures::future::join_all;
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc as StdArc;
 use std::time::Instant;
-use tokio::sync::Semaphore;
+use tokio::time::timeout;
 use tracing::{error, info};
 use url::Url;
 
@@ -78,41 +77,27 @@ pub async fn perform_download_speed_test(
     };
     let port = parsed.port().unwrap_or(if scheme == "https" { 443 } else { 80 });
 
-    let servers_list = match custom_servers {
+    let mut servers_list = match custom_servers {
         Some(s) => s,
         None => get_servers().await,
     };
-
-    let sem = StdArc::new(Semaphore::new(6));
-    let mut tasks = Vec::with_capacity(servers_list.len());
-
-    for server in servers_list.into_iter() {
-        let permit = sem.clone().acquire_owned().await.unwrap();
-        let url_clone = url.clone();
-        let host_clone = host.clone();
-        tasks.push(tokio::spawn(async move {
-            let res = download_via_dns_server(&server, &host_clone, port, &url_clone, test_duration, timeout).await;
-            drop(permit);
-            res
-        }));
+    // Avoid extremely long runs if the list is huge (join_all waits for all tasks)
+    // Keep it conservative by default; can be made configurable from UI later.
+    const MAX_SERVERS: usize = 40;
+    if servers_list.len() > MAX_SERVERS {
+        servers_list.truncate(MAX_SERVERS);
     }
 
-    let results: Vec<DownloadTestResult> = join_all(tasks)
-        .await
-        .into_iter()
-        .map(|r| r.unwrap_or_else(|e| DownloadTestResult {
-            server_address: "unknown".to_string(),
-            resolved_ip: None,
-            duration_ms: 0,
-            bytes_read: 0,
-            bandwidth_mbps: 0.0,
-            query_successful: false,
-            http_status: None,
-            error_msg: Some(format!("Task error: {}", e)),
-        }))
-        .collect();
-
-    results
+    // Process servers with bounded concurrency without extra task spawning.
+    const CONCURRENCY: usize = 6;
+    stream::iter(servers_list.into_iter().map(|server| {
+        let url_clone = url.clone();
+        let host_clone = host.clone();
+        async move { download_via_dns_server(&server, &host_clone, port, &url_clone, test_duration, timeout).await }
+    }))
+    .buffer_unordered(CONCURRENCY)
+    .collect()
+    .await
 }
 
 async fn download_via_dns_server(
@@ -145,10 +130,36 @@ async fn download_via_dns_server(
 
     // Resolve A/AAAA
     let mut chosen_ip: Option<IpAddr> = None;
-    if let Ok(lookup) = resolver.lookup_ip(host).await {
-        for ip in lookup.iter() {
-            chosen_ip = Some(ip);
-            break;
+    match timeout(std::time::Duration::from_secs(timeout_secs), resolver.lookup_ip(host)).await {
+        Ok(Ok(lookup)) => {
+            for ip in lookup.iter() {
+                chosen_ip = Some(ip);
+                break;
+            }
+        }
+        Ok(Err(e)) => {
+            return DownloadTestResult {
+                server_address: server_address.to_string(),
+                resolved_ip: None,
+                duration_ms: 0,
+                bytes_read: 0,
+                bandwidth_mbps: 0.0,
+                query_successful: false,
+                http_status: None,
+                error_msg: Some(format!("DNS resolve error: {}", e)),
+            };
+        }
+        Err(_) => {
+            return DownloadTestResult {
+                server_address: server_address.to_string(),
+                resolved_ip: None,
+                duration_ms: 0,
+                bytes_read: 0,
+                bandwidth_mbps: 0.0,
+                query_successful: false,
+                http_status: None,
+                error_msg: Some("DNS resolve timeout".to_string()),
+            };
         }
     }
     let ip = match chosen_ip {

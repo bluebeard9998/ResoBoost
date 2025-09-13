@@ -324,6 +324,16 @@ pub async fn get_servers() -> Vec<String> {
     DNS_SERVERS.read().await.clone()
 }
 
+pub async fn set_servers(new_servers: Vec<String>) {
+    let filtered: Vec<String> = new_servers
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut servers_guard = DNS_SERVERS.write().await;
+    *servers_guard = filtered;
+}
+
 pub async fn update_servers_from_url(url: &str) -> Result<(), reqwest::Error> {
     println!("Updating DNS servers from: {}", url);
     let response_text = reqwest::get(url).await?.text().await?;
