@@ -5,14 +5,14 @@ use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_resolver::proto::rr::RecordType;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use futures::future::join_all;
+use futures::{stream, StreamExt};
 use url::Url;
-use tokio::sync::Semaphore;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
 use idna::domain_to_ascii;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc as StdArc;
+use tokio::net::TcpStream;
 
 mod servers;
 pub use servers::get_servers;
@@ -23,7 +23,8 @@ use crate::dns_tester::tls_hosts::TLS_HOST_MAP;
 use servers::{init_servers, update_servers_from_url};
 use tls_hosts::{init_tls_hosts, update_tls_hosts_from_url};
 
-pub async fn init_configs() {
+// Made sync to avoid creating a temporary runtime in main; it only spawns async work.
+pub fn init_configs() {
     init_servers();
     init_tls_hosts();
 
@@ -77,33 +78,94 @@ pub async fn perform_dns_benchmark(
     timeout_secs: Option<u64>,
     samples: Option<u32>,
 ) -> Vec<DnsTestResult> {
-    // Accept domain or IP. Validate domain if not an IP.
-    let is_ip = domain_or_ip.parse::<IpAddr>().is_ok();
-    if !is_ip && domain_to_ascii(&domain_or_ip).is_err() {
-        return vec![DnsTestResult {
-            server_address: "invalid_domain".to_string(),
-            resolution_time_ms: None,
-            query_successful: false,
-            latency_avg_ms: None,
-            jitter_avg_ms: None,
-            success_percent: 0.0,
-            dnssec_validated: false,
-            ipv4_ips: vec![],
-            ipv6_ips: vec![],
-            error_msg: Some("Invalid domain format".to_string()),
-            avg_time: None,
-        }];
-    }
+    // Accept domain or IP. Validate/convert domain (IDNA) off the worker thread.
+    let input_is_ip = domain_or_ip.parse::<IpAddr>().is_ok();
+    let ascii_domain: Option<String> = if !input_is_ip {
+        match tokio::task::spawn_blocking({
+            let s = domain_or_ip.clone();
+            move || domain_to_ascii(&s)
+        })
+        .await
+        {
+            Ok(Ok(d)) => Some(d),
+            _ => {
+                return vec![DnsTestResult {
+                    server_address: "invalid_domain".to_string(),
+                    resolution_time_ms: None,
+                    query_successful: false,
+                    latency_avg_ms: None,
+                    jitter_avg_ms: None,
+                    success_percent: 0.0,
+                    dnssec_validated: false,
+                    ipv4_ips: vec![],
+                    ipv6_ips: vec![],
+                    error_msg: Some("Invalid domain format".to_string()),
+                    avg_time: None,
+                }];
+            }
+        }
+    } else {
+        None
+    };
 
     let timeout = timeout_secs.unwrap_or(10);
     let sample_count = samples.unwrap_or(5).max(1) as usize;
 
-    // Normalize domain using IDNA (punycode) so non-ASCII domains resolve correctly
-    let query_norm = if is_ip {
-        domain_or_ip.clone()
+    // If a domain is entered, first resolve & "ping" (TCP connect) to pick an IP,
+    // then benchmark reverse (PTR) lookups for that IP across resolvers as requested.
+    let (query_norm, treat_as_ip) = if input_is_ip {
+        (domain_or_ip.clone(), true)
     } else {
-        // safe unwrap; validated above
-        domain_to_ascii(&domain_or_ip).unwrap()
+        let ascii = ascii_domain.unwrap();
+        let chosen_ip = pick_ip_via_tcp_ping(&ascii, timeout).await;
+        match chosen_ip {
+            Some(ip) => (ip.to_string(), true),
+            None => {
+                // If no IP is reachable via TCP "ping", fall back to first resolved IP
+                let sys_resolver = Resolver::builder_with_config(
+                    ResolverConfig::default(),
+                    TokioConnectionProvider::default(),
+                )
+                .build();
+                match sys_resolver.lookup_ip(&ascii).await {
+                    Ok(lookup) => {
+                        if let Some(ip) = lookup.iter().next() {
+                            (ip.to_string(), true)
+                        } else {
+                            // No A/AAAA records; return a single failure result and stop
+                            return vec![DnsTestResult {
+                                server_address: "no_ip".to_string(),
+                                resolution_time_ms: None,
+                                query_successful: false,
+                                latency_avg_ms: None,
+                                jitter_avg_ms: None,
+                                success_percent: 0.0,
+                                dnssec_validated: false,
+                                ipv4_ips: vec![],
+                                ipv6_ips: vec![],
+                                error_msg: Some("No A/AAAA found for domain".to_string()),
+                                avg_time: None,
+                            }];
+                        }
+                    }
+                    Err(e) => {
+                        return vec![DnsTestResult {
+                            server_address: "resolve_error".to_string(),
+                            resolution_time_ms: None,
+                            query_successful: false,
+                            latency_avg_ms: None,
+                            jitter_avg_ms: None,
+                            success_percent: 0.0,
+                            dnssec_validated: false,
+                            ipv4_ips: vec![],
+                            ipv6_ips: vec![],
+                            error_msg: Some(format!("Domain resolve failed: {}", e)),
+                            avg_time: None,
+                        }];
+                    }
+                }
+            }
+        }
     };
 
     let mut servers_list = match custom_servers {
@@ -114,41 +176,42 @@ pub async fn perform_dns_benchmark(
     if servers_list.len() > 120 {
         servers_list.truncate(120);
     }
-    let mut tasks = Vec::new();
-    let sem = StdArc::new(Semaphore::new(10));
-
-    for server in servers_list.iter() {
-        let permit = sem.clone().acquire_owned().await.unwrap();
+    // Process servers with bounded concurrency without spawning extra tasks.
+    const CONCURRENCY: usize = 10;
+    stream::iter(servers_list.into_iter().map(|server| {
         let query_clone = query_norm.clone();
-        let server_clone = server.clone();
-        tasks.push(tokio::spawn(async move {
-            let res = benchmark_single_server(query_clone, server_clone, timeout, sample_count).await;
-            drop(permit);
-            res
-        }));
+        async move { benchmark_single_server(query_clone, server, timeout, sample_count).await }
+    }))
+    .buffer_unordered(CONCURRENCY)
+    .collect()
+    .await
+}
+
+// Use system DNS to resolve domain to IPs, then try a short TCP connect to choose a reachable IP
+async fn pick_ip_via_tcp_ping(host: &str, timeout_secs: u64) -> Option<IpAddr> {
+    let sys_resolver = Resolver::builder_with_config(
+        ResolverConfig::default(),
+        TokioConnectionProvider::default(),
+    )
+    .build();
+    let Ok(lookup) = sys_resolver.lookup_ip(host).await else { return None };
+
+    let mut ips: Vec<IpAddr> = lookup.iter().collect();
+    // Try v4 first for better connectivity odds
+    ips.sort_by_key(|ip| if ip.is_ipv4() { 0 } else { 1 });
+
+    let per_try = std::cmp::min(3, timeout_secs as usize) as u64;
+    for ip in ips {
+        for port in [443u16, 80u16] {
+            let addr = SocketAddr::new(ip, port);
+            let fut = TcpStream::connect(addr);
+            match timeout(std::time::Duration::from_secs(per_try), fut).await {
+                Ok(Ok(_stream)) => return Some(ip),
+                _ => {}
+            }
+        }
     }
-
-    let results: Vec<DnsTestResult> = join_all(tasks)
-        .await
-        .into_iter()
-        .map(|res| {
-            res.unwrap_or_else(|e| DnsTestResult {
-                server_address: "unknown".to_string(),
-                resolution_time_ms: None,
-                query_successful: false,
-                latency_avg_ms: None,
-                jitter_avg_ms: None,
-                success_percent: 0.0,
-                dnssec_validated: false,
-                ipv4_ips: vec![],
-                ipv6_ips: vec![],
-                error_msg: Some(format!("Task error: {}", e)),
-                avg_time: None,
-            })
-        })
-        .collect();
-
-    results
+    None
 }
 
 async fn benchmark_single_server(
@@ -484,8 +547,12 @@ pub async fn build_resolver_for_server(
         }
     };
 
-    let resolver = Resolver::builder_with_config(config, TokioConnectionProvider::default())
-        .with_options(opts)
-        .build();
-    Ok(resolver)
+    let resolver_builder = Resolver::builder_with_config(config, TokioConnectionProvider::default())
+        .with_options(opts);
+
+    // Offload resolver build (may do heavier sync init) to a blocking thread.
+    let built = tokio::task::spawn_blocking(move || resolver_builder.build())
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
+    Ok(built)
 }

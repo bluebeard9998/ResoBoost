@@ -2,3 +2,83 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --bg: #0d1117;
+  --panel: #161a22;
+  --panel-2: #1b2030;
+  --sidebar-bg: #161b22;
+  --muted: #7a869a;
+  --ok: #16a34a; /* green-600 */
+  --bad: #dc2626; /* red-600 */
+  --accent: #60a5fa; /* blue-400 */
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: #e5e7eb; /* gray-200 */
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 8px;
+}
+
+.badge {
+  @apply text-xs px-2 py-0.5 rounded-full font-medium align-middle;
+}
+
+.btn {
+  @apply inline-flex items-center gap-2 px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition;
+}
+
+.input {
+  @apply w-full rounded-md bg-[var(--panel)] border border-white/10 px-3 py-2 text-sm placeholder:text-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-blue-500/40 text-white;
+}
+
+.card {
+  @apply rounded-lg bg-[var(--panel)] border border-white/10 p-4;
+}
+
+.stepper {
+  @apply inline-flex items-center justify-between rounded-2xl bg-[#2d333b] border border-white/10 text-white px-4 py-2;
+}
+
+/* Minimal indeterminate progress bar */
+.progress {
+  position: relative;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progress .bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: linear-gradient(90deg, var(--accent), #3b82f6);
+  border-radius: 9999px;
+  animation: progress-indeterminate 1.15s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(260%); }
+}

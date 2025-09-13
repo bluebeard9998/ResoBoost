@@ -19,11 +19,17 @@ async fn run_dns_benchmark(
 
 fn main() {
     // Ensure default configs are initialized (servers + TLS host map)
-    tauri::async_runtime::block_on(dns_tester::init_configs());
+    // Avoid creating a temporary Tokio runtime here; init is sync and spawns its own async work.
+    dns_tester::init_configs();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![run_dns_benchmark, speed_tester::perform_download_speed_test])
+        .invoke_handler(tauri::generate_handler![
+            run_dns_benchmark,
+            speed_tester::perform_download_speed_test,
+            dns_tester::get_dns_servers,
+            dns_tester::set_dns_servers,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
