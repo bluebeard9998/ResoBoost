@@ -28,7 +28,7 @@ futures = "0.3.31"
 url = "2.5.7"
 tracing = "0.1.40"
 idna = "0.5.0"
-hickory-resolver = { version = "0.25.2", features = ["backtrace", "dnssec-ring", "h3-ring", "https-ring", "quic-ring", "rustls-platform-verifier", "serde", "tls-ring", "webpki-roots"] }
+hickory-resolver = { version = "0.25.2", features = ["backtrace", "dnssec-ring", "https-ring", "quic-ring", "rustls-platform-verifier", "serde", "tls-ring", "webpki-roots"] }
 reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
 serde_yaml = "0.9"
 once_cell = "1.18"

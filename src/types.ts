@@ -6,6 +6,7 @@ export type DnsTestResult = {
   jitter_avg_ms?: number | null;
   success_percent: number;
   dnssec_validated: boolean;
+  dnssec_enabled?: boolean;
   ipv4_ips: string[];
   ipv6_ips: string[];
   error_msg?: string | null;
@@ -28,6 +29,8 @@ export type DnsBenchmarkParams = {
   samples?: number;
   timeoutSecs?: number;
   customServers?: string[];
+  validateDnssec?: boolean;
+  warmUp?: boolean;
 };
 
 export type DownloadSpeedParams = {

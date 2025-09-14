@@ -2,7 +2,6 @@ use hickory_resolver::config::{NameServerConfigGroup, ResolverConfig, ResolverOp
 use hickory_resolver::TokioResolver;
 use hickory_resolver::Resolver;
 use hickory_resolver::name_server::TokioConnectionProvider;
-use hickory_resolver::proto::rr::RecordType;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use futures::{stream, StreamExt};
@@ -10,9 +9,9 @@ use url::Url;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
 use idna::domain_to_ascii;
-use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc as StdArc;
-use tokio::net::TcpStream;
+use std::net::IpAddr;
+use tokio::runtime::Builder as TokioRtBuilder; // for isolated runtimes with larger stacks
+// reverted: removed host-IP cache to restore direct resolution behavior
 
 mod servers;
 pub use servers::get_servers;
@@ -22,6 +21,8 @@ mod tls_hosts;
 use crate::dns_tester::tls_hosts::TLS_HOST_MAP;
 use servers::{init_servers, update_servers_from_url};
 use tls_hosts::{init_tls_hosts, update_tls_hosts_from_url};
+
+// (no host-IP cache)
 
 // Made sync to avoid creating a temporary runtime in main; it only spawns async work.
 pub fn init_configs() {
@@ -65,6 +66,7 @@ pub struct DnsTestResult {
     pub jitter_avg_ms: Option<f64>,
     pub success_percent: f64,
     pub dnssec_validated: bool,
+    pub dnssec_enabled: bool,
     pub ipv4_ips: Vec<String>,
     pub ipv6_ips: Vec<String>,
     pub error_msg: Option<String>,
@@ -77,8 +79,12 @@ pub async fn perform_dns_benchmark(
     custom_servers: Option<Vec<String>>,
     timeout_secs: Option<u64>,
     samples: Option<u32>,
+    validate_dnssec: Option<bool>,
+    warm_up: Option<bool>,
 ) -> Vec<DnsTestResult> {
     // Accept domain or IP. Validate/convert domain (IDNA) off the worker thread.
+    let validate_dnssec_flag = validate_dnssec.unwrap_or(false);
+    let warm_up_flag = warm_up.unwrap_or(false);
     let input_is_ip = domain_or_ip.parse::<IpAddr>().is_ok();
     let ascii_domain: Option<String> = if !input_is_ip {
         match tokio::task::spawn_blocking({
@@ -97,6 +103,7 @@ pub async fn perform_dns_benchmark(
                     jitter_avg_ms: None,
                     success_percent: 0.0,
                     dnssec_validated: false,
+                    dnssec_enabled: validate_dnssec_flag,
                     ipv4_ips: vec![],
                     ipv6_ips: vec![],
                     error_msg: Some("Invalid domain format".to_string()),
@@ -111,61 +118,12 @@ pub async fn perform_dns_benchmark(
     let timeout = timeout_secs.unwrap_or(10);
     let sample_count = samples.unwrap_or(5).max(1) as usize;
 
-    // If a domain is entered, first resolve & "ping" (TCP connect) to pick an IP,
-    // then benchmark reverse (PTR) lookups for that IP across resolvers as requested.
-    let (query_norm, treat_as_ip) = if input_is_ip {
-        (domain_or_ip.clone(), true)
+    // If a domain is entered, benchmark standard forward lookups (A/AAAA) for that domain.
+    // If an IP is entered, benchmark a reverse (PTR) lookup for that IP.
+    let query_norm = if input_is_ip {
+        domain_or_ip.clone()
     } else {
-        let ascii = ascii_domain.unwrap();
-        let chosen_ip = pick_ip_via_tcp_ping(&ascii, timeout).await;
-        match chosen_ip {
-            Some(ip) => (ip.to_string(), true),
-            None => {
-                // If no IP is reachable via TCP "ping", fall back to first resolved IP
-                let sys_resolver = Resolver::builder_with_config(
-                    ResolverConfig::default(),
-                    TokioConnectionProvider::default(),
-                )
-                .build();
-                match sys_resolver.lookup_ip(&ascii).await {
-                    Ok(lookup) => {
-                        if let Some(ip) = lookup.iter().next() {
-                            (ip.to_string(), true)
-                        } else {
-                            // No A/AAAA records; return a single failure result and stop
-                            return vec![DnsTestResult {
-                                server_address: "no_ip".to_string(),
-                                resolution_time_ms: None,
-                                query_successful: false,
-                                latency_avg_ms: None,
-                                jitter_avg_ms: None,
-                                success_percent: 0.0,
-                                dnssec_validated: false,
-                                ipv4_ips: vec![],
-                                ipv6_ips: vec![],
-                                error_msg: Some("No A/AAAA found for domain".to_string()),
-                                avg_time: None,
-                            }];
-                        }
-                    }
-                    Err(e) => {
-                        return vec![DnsTestResult {
-                            server_address: "resolve_error".to_string(),
-                            resolution_time_ms: None,
-                            query_successful: false,
-                            latency_avg_ms: None,
-                            jitter_avg_ms: None,
-                            success_percent: 0.0,
-                            dnssec_validated: false,
-                            ipv4_ips: vec![],
-                            ipv6_ips: vec![],
-                            error_msg: Some(format!("Domain resolve failed: {}", e)),
-                            avg_time: None,
-                        }];
-                    }
-                }
-            }
-        }
+        ascii_domain.unwrap()
     };
 
     let mut servers_list = match custom_servers {
@@ -176,52 +134,155 @@ pub async fn perform_dns_benchmark(
     if servers_list.len() > 120 {
         servers_list.truncate(120);
     }
-    // Process servers with bounded concurrency without spawning extra tasks.
+    // Early reachability precheck: quickly test servers with a shorter timeout and skip unresponsive ones.
+    let precheck_timeout = std::cmp::min(3, timeout);
+    let query_for_pre = query_norm.clone();
+    let prechecked: Vec<(String, bool)> = stream::iter(servers_list.iter().cloned().map(|server| {
+        let q = query_for_pre.clone();
+        let validate = validate_dnssec_flag;
+        async move {
+            let ok = precheck_server(&q, &server, precheck_timeout, validate).await;
+            (server, ok)
+        }
+    }))
+    .buffer_unordered(20)
+    .collect()
+    .await;
+
+    let filtered: Vec<String> = prechecked
+        .into_iter()
+        .filter(|(_, ok)| *ok)
+        .map(|(s, _)| s)
+        .collect();
+
+    if !filtered.is_empty() {
+        servers_list = filtered;
+    }
+    // Process servers with bounded concurrency, offloading each server's work
+    // into an isolated Tokio runtime with a larger thread stack to avoid worker overflows.
     const CONCURRENCY: usize = 10;
     stream::iter(servers_list.into_iter().map(|server| {
         let query_clone = query_norm.clone();
-        async move { benchmark_single_server(query_clone, server, timeout, sample_count).await }
+        let validate_dnssec_flag = validate_dnssec_flag;
+        let warm_up_flag = warm_up_flag;
+        async move {
+            tokio::task::spawn_blocking(move || {
+                run_server_benchmark_in_isolated_rt(
+                    query_clone,
+                    server,
+                    timeout,
+                    sample_count,
+                    validate_dnssec_flag,
+                    warm_up_flag,
+                )
+            })
+            .await
+            .unwrap_or_else(|e| DnsTestResult {
+                server_address: "unknown".to_string(),
+                resolution_time_ms: None,
+                query_successful: false,
+                latency_avg_ms: None,
+                jitter_avg_ms: None,
+                success_percent: 0.0,
+                dnssec_validated: false,
+                dnssec_enabled: validate_dnssec_flag,
+                ipv4_ips: vec![],
+                ipv6_ips: vec![],
+                error_msg: Some(format!("Task error: {}", e)),
+                avg_time: None,
+            })
+        }
     }))
     .buffer_unordered(CONCURRENCY)
     .collect()
     .await
 }
 
-// Use system DNS to resolve domain to IPs, then try a short TCP connect to choose a reachable IP
-async fn pick_ip_via_tcp_ping(host: &str, timeout_secs: u64) -> Option<IpAddr> {
-    let sys_resolver = Resolver::builder_with_config(
-        ResolverConfig::default(),
-        TokioConnectionProvider::default(),
-    )
-    .build();
-    let Ok(lookup) = sys_resolver.lookup_ip(host).await else { return None };
-
-    let mut ips: Vec<IpAddr> = lookup.iter().collect();
-    // Try v4 first for better connectivity odds
-    ips.sort_by_key(|ip| if ip.is_ipv4() { 0 } else { 1 });
-
-    let per_try = std::cmp::min(3, timeout_secs as usize) as u64;
-    for ip in ips {
-        for port in [443u16, 80u16] {
-            let addr = SocketAddr::new(ip, port);
-            let fut = TcpStream::connect(addr);
-            match timeout(std::time::Duration::from_secs(per_try), fut).await {
-                Ok(Ok(_stream)) => return Some(ip),
-                _ => {}
-            }
+// Quick reachability check with short timeout, returns true if a basic query succeeds.
+async fn precheck_server(
+    query: &str,
+    server: &str,
+    timeout_secs: u64,
+    validate_dnssec: bool,
+) -> bool {
+    // Build resolver and attempt one lookup within timeout.
+    let resolver = match build_resolver_for_server(server, timeout_secs, validate_dnssec).await {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    // Treat IP input as reverse lookup, otherwise forward lookup.
+    if let Ok(ip) = query.parse::<IpAddr>() {
+        match timeout(std::time::Duration::from_secs(timeout_secs), resolver.reverse_lookup(ip)).await {
+            Ok(Ok(lookup)) => lookup.iter().next().is_some(),
+            _ => false,
+        }
+    } else {
+        match timeout(std::time::Duration::from_secs(timeout_secs), resolver.lookup_ip(query)).await {
+            Ok(Ok(lookup)) => lookup.iter().next().is_some(),
+            _ => false,
         }
     }
-    None
 }
+
+// Runs the async per-server benchmark inside a dedicated Tokio runtime with a larger
+// thread stack size. This avoids deep stack use on shared worker threads.
+fn run_server_benchmark_in_isolated_rt(
+    query: String,
+    server_address: String,
+    timeout_secs: u64,
+    samples: usize,
+    validate_dnssec: bool,
+    warm_up: bool,
+) -> DnsTestResult {
+    // 4 MiB stack to be safe on Windows for TLS/ASN.1/h3 parsing paths
+    let rt = TokioRtBuilder::new_current_thread()
+        .enable_all()
+        .thread_stack_size(4 * 1024 * 1024)
+        .build();
+    let rt = match rt {
+        Ok(rt) => rt,
+        Err(e) => {
+            return DnsTestResult {
+                server_address,
+                resolution_time_ms: None,
+                query_successful: false,
+                latency_avg_ms: None,
+                jitter_avg_ms: None,
+                success_percent: 0.0,
+                dnssec_validated: false,
+                dnssec_enabled: validate_dnssec,
+                ipv4_ips: vec![],
+                ipv6_ips: vec![],
+                error_msg: Some(format!("Runtime build error: {}", e)),
+                avg_time: None,
+            };
+        }
+    };
+
+    rt.block_on(async move {
+        benchmark_single_server(
+            query,
+            server_address,
+            timeout_secs,
+            samples,
+            validate_dnssec,
+            warm_up,
+        )
+        .await
+    })
+}
+
 
 async fn benchmark_single_server(
     query: String,
     server_address: String,
     timeout_secs: u64,
     samples: usize,
+    validate_dnssec: bool,
+    warm_up: bool,
 ) -> DnsTestResult {
     info!("Testing server: {}", server_address);
-    let resolver_result = build_resolver_for_server(&server_address, timeout_secs).await;
+    let resolver_result = build_resolver_for_server(&server_address, timeout_secs, validate_dnssec).await;
 
     let resolver = match resolver_result {
         Ok(r) => r,
@@ -235,6 +296,7 @@ async fn benchmark_single_server(
                 jitter_avg_ms: None,
                 success_percent: 0.0,
                 dnssec_validated: false,
+                dnssec_enabled: validate_dnssec,
                 ipv4_ips: vec![],
                 ipv6_ips: vec![],
                 error_msg: Some(e.to_string()),
@@ -244,12 +306,24 @@ async fn benchmark_single_server(
     };
 
     let is_ip = query.parse::<IpAddr>().is_ok();
+
+    // Optional warm-up query to establish connections (not measured)
+    if warm_up {
+        let warm_to = std::cmp::min(timeout_secs, 3);
+        if is_ip {
+            if let Ok(ip) = query.parse::<IpAddr>() {
+                let _ = timeout(std::time::Duration::from_secs(warm_to), resolver.reverse_lookup(ip)).await;
+            }
+        } else {
+            let _ = timeout(std::time::Duration::from_secs(warm_to), resolver.lookup_ip(&query)).await;
+        }
+    }
     let mut latencies_ms: Vec<f64> = Vec::with_capacity(samples);
     let mut successes = 0usize;
     let mut last_error: Option<String> = None;
     let mut ipv4_all = Vec::new();
     let mut ipv6_all = Vec::new();
-    let mut dnssec_any_secure = false;
+    // per-record security not available in all versions; aggregate via resolver options below
 
     for _ in 0..samples {
         let start = Instant::now();
@@ -261,13 +335,7 @@ async fn benchmark_single_server(
                 Ok(ip) => match timeout(std::time::Duration::from_secs(timeout_secs), resolver.reverse_lookup(ip)).await {
                     Ok(Ok(lookup)) => {
                         sample_success = !lookup.iter().next().is_none();
-                        #[allow(unused_variables)]
-                        let _ = {
-                            // ReverseLookup security indicator is not guaranteed in all versions,
-                            // but if available, prefer it
-                            #[cfg(any())]
-                            if lookup.is_secure() { dnssec_any_secure = true; }
-                        };
+                        // ReverseLookup security indicator not consistently available across versions.
                     }
                     Ok(Err(e)) => {
                         last_error = Some(e.to_string());
@@ -309,20 +377,32 @@ async fn benchmark_single_server(
         }
     }
 
-    // Compute metrics
+    // Compute metrics (median latency + standard deviation for jitter)
     let latency_avg_ms = if !latencies_ms.is_empty() {
-        Some(latencies_ms.iter().sum::<f64>() / latencies_ms.len() as f64)
+        let mut sorted = latencies_ms.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mid = sorted.len() / 2;
+        let median = if sorted.len() % 2 == 1 {
+            sorted[mid]
+        } else {
+            (sorted[mid - 1] + sorted[mid]) / 2.0
+        };
+        Some(median)
     } else {
         None
     };
     let jitter_avg_ms = if latencies_ms.len() > 1 {
-        let mean = latency_avg_ms.unwrap_or(0.0);
-        let mad = latencies_ms
+        let n = latencies_ms.len() as f64;
+        let mean = latencies_ms.iter().sum::<f64>() / n;
+        let var = latencies_ms
             .iter()
-            .map(|v| (v - mean).abs())
+            .map(|v| {
+                let d = *v - mean;
+                d * d
+            })
             .sum::<f64>()
-            / latencies_ms.len() as f64;
-        Some(mad)
+            / (n - 1.0); // sample standard deviation
+        Some(var.sqrt())
     } else if latencies_ms.len() == 1 {
         // With a single sample, define jitter as 0 instead of null for clearer UI
         Some(0.0)
@@ -354,6 +434,7 @@ async fn benchmark_single_server(
         // this flag indicates whether validation is enabled; per-record security would require
         // checking lookup.is_secure(), which is partially accounted for during lookups above.
         dnssec_validated: resolver.options().validate && successes > 0,
+        dnssec_enabled: resolver.options().validate,
         ipv4_ips: ipv4_all,
         ipv6_ips: ipv6_all,
         error_msg: last_error,
@@ -364,13 +445,16 @@ async fn benchmark_single_server(
 pub async fn build_resolver_for_server(
     server_address: &str,
     timeout_secs: u64,
+    validate_dnssec: bool,
 ) -> Result<TokioResolver, Box<dyn std::error::Error + Send + Sync>> {
     let mut opts = ResolverOpts::default();
     opts.timeout = std::time::Duration::from_secs(timeout_secs);
-    opts.validate = true;
+    opts.validate = validate_dnssec;
     // Reduce retries to avoid long stalls across many servers
     opts.attempts = 1;
-    opts.cache_size = 512;
+    // Disable resolver cache to avoid near-zero times after warm-up
+    // and measure real network latency rather than in-process cache hits.
+    opts.cache_size = 0;
 
     let config = if server_address.starts_with("https://") || server_address.starts_with("h3://") {
         // Parse full URL, capture host/port/path, and build DoH/H3 with SNI + path
@@ -423,16 +507,11 @@ pub async fn build_resolver_for_server(
             (host_raw.clone(), ips)
         };
 
-        // Build NameServerConfigGroup (HTTPS or H3), then set custom endpoint path
-        let use_h3 = is_h3 && cfg!(not(target_os = "windows"));
-        if is_h3 && !use_h3 {
-            warn!("H3 requested but not enabled on this platform; falling back to HTTPS");
+        // Build NameServerConfigGroup for DoH (HTTPS). Treat any h3:// as HTTPS fallback.
+        if is_h3 {
+            warn!("H3 scheme provided but H3 support is disabled; using HTTPS fallback");
         }
-        let mut group = if use_h3 {
-            NameServerConfigGroup::from_ips_h3(&ips, port, tls_dns_name, true)
-        } else {
-            NameServerConfigGroup::from_ips_https(&ips, port, tls_dns_name, true)
-        };
+        let mut group = NameServerConfigGroup::from_ips_https(&ips, port, tls_dns_name, true);
         for ns in group.iter_mut() {
             ns.http_endpoint = Some(endpoint.clone());
         }

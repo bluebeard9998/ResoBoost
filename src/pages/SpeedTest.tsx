@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DownloadSpeedParams, DownloadTestResult } from "../types";
+import { saveCsvAs, toSafeName, toDownloadCsv } from "../utils/export";
 import Stepper from "../components/Stepper";
 import ProgressBar from "../components/ProgressBar";
 
@@ -17,12 +18,16 @@ export default function SpeedTest() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<DownloadTestResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const runCounter = useRef(0);
+  const activeRunId = useRef<number | null>(null);
 
   const sorted = useMemo(() => {
     return [...(results || [])].sort((a, b) => b.bandwidth_mbps - a.bandwidth_mbps);
   }, [results]);
 
   async function run() {
+    const id = ++runCounter.current;
+    activeRunId.current = id;
     setLoading(true);
     setError(null);
     setResults(null);
@@ -32,13 +37,20 @@ export default function SpeedTest() {
         durationSecs: Math.max(1, duration),
         timeoutSecs: Math.max(1, timeout),
       };
-      const res = await invoke<DownloadTestResult[]>("perform_download_speed_test", params);
+      const res = await invoke<DownloadTestResult[]>("perform_download_speed_test", { args: params });
+      if (activeRunId.current !== id) return; // canceled or superseded
       setResults(res);
     } catch (e: any) {
+      if (activeRunId.current !== id) return; // canceled
       setError(String(e?.message ?? e));
     } finally {
-      setLoading(false);
+      if (activeRunId.current === id) setLoading(false);
     }
+  }
+
+  function stop() {
+    activeRunId.current = null;
+    setLoading(false);
   }
 
   return (
@@ -59,8 +71,8 @@ export default function SpeedTest() {
             <Stepper value={duration} onChange={setDuration} min={1} aria-label="Duration seconds" />
           </div>
           <div className="flex justify-center">
-            <button className="btn" onClick={run} disabled={loading}>
-              {loading ? "Running…" : "Test Download Speed"}
+            <button className={loading ? "btn-danger" : "btn"} onClick={loading ? stop : run}>
+              {loading ? "Stop" : "Test Download Speed"}
             </button>
           </div>
           <div className="flex items-center gap-3 justify-end">
@@ -101,9 +113,27 @@ export default function SpeedTest() {
             </div>
           ))}
           {sorted.length === 0 && <div className="text-sm text-[var(--muted)]">No results.</div>}
+
+          {/* Export button at end, centered */}
+          <div className="flex justify-center pt-1">
+            <button
+              className="btn"
+              onClick={async () => {
+                let host = "download";
+                try { host = new URL(url).host || host; } catch {}
+                const safe = toSafeName(host, "download");
+                const ts = new Date().toISOString().replace(/[:.]/g, "-");
+                const name = `download-speed-${safe}-${ts}.csv`;
+                const csv = toDownloadCsv(results || []);
+                await saveCsvAs(csv, name);
+              }}
+              title="Export all results (CSV)"
+            >
+              Export CSV
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
-

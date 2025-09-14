@@ -2,11 +2,11 @@ use crate::dns_tester::{build_resolver_for_server, get_servers};
 use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc as StdArc;
 use std::time::Instant;
 use tokio::time::timeout;
-use tracing::{error, info};
+use tracing::info;
 use url::Url;
+use tokio::runtime::Builder as TokioRtBuilder; // isolated DNS resolve runtime with larger stack
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DownloadTestResult {
@@ -20,17 +20,23 @@ pub struct DownloadTestResult {
     pub error_msg: Option<String>,
 }
 
-#[tauri::command]
-pub async fn perform_download_speed_test(
-    url: String,
-    duration_secs: Option<u64>,
-    timeout_secs: Option<u64>,
-    custom_servers: Option<Vec<String>>,
-) -> Vec<DownloadTestResult> {
-    let test_duration = duration_secs.unwrap_or(10); // default 10s
-    let timeout = timeout_secs.unwrap_or(15).max(test_duration + 5);
+#[derive(Deserialize)]
+pub struct DownloadSpeedArgs {
+    pub url: String,
+    #[serde(alias = "durationSecs")] 
+    pub duration_secs: Option<u64>,
+    #[serde(alias = "timeoutSecs")] 
+    pub timeout_secs: Option<u64>,
+    #[serde(alias = "customServers")] 
+    pub custom_servers: Option<Vec<String>>,
+}
 
-    let parsed = match Url::parse(&url) {
+#[tauri::command]
+pub async fn perform_download_speed_test(args: DownloadSpeedArgs) -> Vec<DownloadTestResult> {
+    let test_duration = args.duration_secs.unwrap_or(10); // default 10s
+    let timeout = args.timeout_secs.unwrap_or(15).max(test_duration + 5);
+
+    let parsed = match Url::parse(&args.url) {
         Ok(u) => u,
         Err(e) => {
             return vec![DownloadTestResult {
@@ -77,7 +83,7 @@ pub async fn perform_download_speed_test(
     };
     let port = parsed.port().unwrap_or(if scheme == "https" { 443 } else { 80 });
 
-    let mut servers_list = match custom_servers {
+    let mut servers_list = match args.custom_servers {
         Some(s) => s,
         None => get_servers().await,
     };
@@ -91,7 +97,7 @@ pub async fn perform_download_speed_test(
     // Process servers with bounded concurrency without extra task spawning.
     const CONCURRENCY: usize = 6;
     stream::iter(servers_list.into_iter().map(|server| {
-        let url_clone = url.clone();
+        let url_clone = args.url.clone();
         let host_clone = host.clone();
         async move { download_via_dns_server(&server, &host_clone, port, &url_clone, test_duration, timeout).await }
     }))
@@ -110,34 +116,18 @@ async fn download_via_dns_server(
 ) -> DownloadTestResult {
     info!("Speed test via {} for {}", server_address, host);
 
-    // Build resolver for this DNS server
-    let resolver = match build_resolver_for_server(server_address, timeout_secs).await {
-        Ok(r) => r,
-        Err(e) => {
-            error!("Resolver build error ({}): {}", server_address, e);
-            return DownloadTestResult {
-                server_address: server_address.to_string(),
-                resolved_ip: None,
-                duration_ms: 0,
-                bytes_read: 0,
-                bandwidth_mbps: 0.0,
-                query_successful: false,
-                http_status: None,
-                error_msg: Some(format!("Resolver error: {}", e)),
-            };
-        }
-    };
+    // Resolve A/AAAA in an isolated runtime with a larger thread stack to avoid worker overflow.
+    let resolved_ip: Result<IpAddr, String> = tokio::task::spawn_blocking({
+        let server = server_address.to_string();
+        let host = host.to_string();
+        move || resolve_ip_in_isolated_rt(server, host, timeout_secs)
+    })
+    .await
+    .unwrap_or_else(|e| Err(format!("Resolve task error: {}", e)));
 
-    // Resolve A/AAAA
-    let mut chosen_ip: Option<IpAddr> = None;
-    match timeout(std::time::Duration::from_secs(timeout_secs), resolver.lookup_ip(host)).await {
-        Ok(Ok(lookup)) => {
-            for ip in lookup.iter() {
-                chosen_ip = Some(ip);
-                break;
-            }
-        }
-        Ok(Err(e)) => {
+    let ip = match resolved_ip {
+        Ok(ip) => ip,
+        Err(msg) => {
             return DownloadTestResult {
                 server_address: server_address.to_string(),
                 resolved_ip: None,
@@ -146,34 +136,7 @@ async fn download_via_dns_server(
                 bandwidth_mbps: 0.0,
                 query_successful: false,
                 http_status: None,
-                error_msg: Some(format!("DNS resolve error: {}", e)),
-            };
-        }
-        Err(_) => {
-            return DownloadTestResult {
-                server_address: server_address.to_string(),
-                resolved_ip: None,
-                duration_ms: 0,
-                bytes_read: 0,
-                bandwidth_mbps: 0.0,
-                query_successful: false,
-                http_status: None,
-                error_msg: Some("DNS resolve timeout".to_string()),
-            };
-        }
-    }
-    let ip = match chosen_ip {
-        Some(ip) => ip,
-        None => {
-            return DownloadTestResult {
-                server_address: server_address.to_string(),
-                resolved_ip: None,
-                duration_ms: 0,
-                bytes_read: 0,
-                bandwidth_mbps: 0.0,
-                query_successful: false,
-                http_status: None,
-                error_msg: Some("No A/AAAA records found".to_string()),
+                error_msg: Some(msg),
             };
         }
     };
@@ -245,4 +208,26 @@ async fn download_via_dns_server(
         http_status: status,
         error_msg: last_err,
     }
+}
+
+// Resolve a single IP for `host` using a resolver configured for `server_address`,
+// executing in a dedicated runtime with larger thread stack.
+fn resolve_ip_in_isolated_rt(server_address: String, host: String, timeout_secs: u64) -> Result<IpAddr, String> {
+    let rt = TokioRtBuilder::new_current_thread()
+        .enable_all()
+        .thread_stack_size(4 * 1024 * 1024)
+        .build()
+        .map_err(|e| format!("Runtime build error: {}", e))?;
+
+    rt.block_on(async move {
+        let resolver = build_resolver_for_server(&server_address, timeout_secs, true)
+            .await
+            .map_err(|e| format!("Resolver error: {}", e))?;
+
+        match timeout(std::time::Duration::from_secs(timeout_secs), resolver.lookup_ip(&host)).await {
+            Ok(Ok(lookup)) => lookup.iter().next().ok_or_else(|| "No A/AAAA records found".to_string()),
+            Ok(Err(e)) => Err(format!("DNS resolve error: {}", e)),
+            Err(_) => Err("DNS resolve timeout".to_string()),
+        }
+    })
 }
