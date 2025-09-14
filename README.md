@@ -95,5 +95,4 @@ If you discover a security vulnerability (for example in the DNS resolution logi
 - [Tauri](https://tauri.app/), for providing a lightweight, secure application framework.  
 - [`hickory-resolver`](https://crates.io/crates/hickory-resolver) and [`reqwest`](https://crates.io/crates/reqwest), for enabling async DNS and HTTP operations.  
 - [Tailwind CSS](https://tailwindcss.com/) and [Vite](https://vitejs.dev/), for powering a modern, fast React front-end.  
-- [`DNS_SERVERS` repository](https://github.com/bluebeard9998/DNS_SERVERS), which supplies the default resolver lists.  
-- All contributors and testers who helped shape this tool.
+- [`DNS_SERVERS` repository](https://github.com/bluebeard9998/DNS_SERVERS), which supplies the resolver lists.  
