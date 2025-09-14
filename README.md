@@ -75,18 +75,18 @@ Custom DNS server lists are fetched from the DNS_SERVERS repository on start and
 - “Network unavailable” errors → check firewall/VPN; the app needs outbound DNS/HTTP.
 - DNSSEC fails → not all resolvers support DNSSEC; try disabling it or use a DNSSEC-enabled resolver.
 - Custom servers won’t save → one server per line; supported forms include:
-    - 8.8.8.8 (UDP/TCP),
-    - tls://1.1.1.1@cloudflare-dns.com (DoT),
-    - https://dns.quad9.net/dns-query (DoH),
-    - quic://1.1.1.1:784@dns.cloudflare.com (DoQ).
+     - `8.8.8.8` (UDP/TCP)
+     - `tls://1.1.1.1@cloudflare-dns.com` (DoT)
+     - `https://dns.quad9.net/dns-query` (DoH)
+     - `quic://1.1.1.1:784@dns.cloudflare.com` (DoQ)
 - Low download speed → increase per-DNS test duration, pick a closer mirror, or verify your network path.
 
 ## Roadmap
 -  Pre-built installers and auto-update support
 -  CLI mode for headless benchmarking / CI integration
 -  Additional metrics (packet loss, jitter distributions, upstream tests)
- - Tagging/favourites and better server list management
- - Built-in charts and historical comparisons
+- Tagging/favourites and better server list management
+- Built-in charts and historical comparisons
 
 ## Security & Responsible Disclosure
 If you discover a security vulnerability (for example in the DNS resolution logic or Tauri packaging), please do not open a public issue. Instead, email the maintainer (see GitHub profile) with details. We appreciate responsible disclosure and will respond quickly.
