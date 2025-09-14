@@ -1,7 +1,6 @@
 # ResoBoost – DNS & Download Benchmark App
 
 ![License MIT](https://img.shields.io/badge/license-MIT-blue.svg)  
-> TODO: Add CI, release, and coverage badges once configured.
 
 **ResoBoost** is a cross-platform network performance tool built with **Tauri** (Rust back-end) and a **React + TypeScript + Vite + Tailwind CSS** front-end. It benchmarks DNS resolvers and download speeds, producing metrics such as average latency, jitter, success rate, DNSSEC validation, and per-server bandwidth.
 
