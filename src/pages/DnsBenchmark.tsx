@@ -9,7 +9,7 @@ import { saveCsvAs, toSafeName, toDnsCsv } from "../utils/export";
 export default function DnsBenchmark() {
   const [domain, setDomain] = useState("flutter.dev");
   const [samples, setSamples] = useState(3);
-  const [timeout, setTimeout] = useState(13);
+  const [timeout, setTimeout] = useState(11);
   const [dnssec, setDnssec] = useState(false);
   const [warmUp, setWarmUp] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,7 @@ export default function DnsBenchmark() {
         <div className="flex flex-wrap items-center gap-3">
           <input
             className="input"
-            placeholder="Domain or IP (e.g. example.com)"
+            placeholder="Domain or IP (e.g. google.com or 65.49.2.178)"
             onChange={e => setDomain(e.target.value)}
           />
         </div>

@@ -147,6 +147,10 @@ async fn download_via_dns_server(
         .resolve(host, socket)
         .connect_timeout(std::time::Duration::from_secs(timeout_secs))
         .timeout(std::time::Duration::from_secs(timeout_secs))
+        // Prefer HTTP/1.1 for streaming stability across diverse CDNs
+        .http1_only()
+        // Avoid env proxies interfering with direct IP connections
+        .no_proxy()
         .build()
     {
         Ok(c) => c,
@@ -225,7 +229,17 @@ fn resolve_ip_in_isolated_rt(server_address: String, host: String, timeout_secs:
             .map_err(|e| format!("Resolver error: {}", e))?;
 
         match timeout(std::time::Duration::from_secs(timeout_secs), resolver.lookup_ip(&host)).await {
-            Ok(Ok(lookup)) => lookup.iter().next().ok_or_else(|| "No A/AAAA records found".to_string()),
+            Ok(Ok(lookup)) => {
+                // Prefer IPv4 for download sockets to avoid environments where IPv6 is present
+                // in DNS but not actually reachable, which would yield 0 bytes read.
+                let mut first: Option<IpAddr> = None;
+                let mut v4_choice: Option<IpAddr> = None;
+                for ip in lookup.iter() {
+                    if first.is_none() { first = Some(ip); }
+                    if ip.is_ipv4() { v4_choice = Some(ip); break; }
+                }
+                v4_choice.or(first).ok_or_else(|| "No A/AAAA records found".to_string())
+            }
             Ok(Err(e)) => Err(format!("DNS resolve error: {}", e)),
             Err(_) => Err("DNS resolve timeout".to_string()),
         }

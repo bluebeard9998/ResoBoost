@@ -518,10 +518,17 @@ pub async fn build_resolver_for_server(
 
         ResolverConfig::from_parts(None, vec![], group)
     } else if let Some(stripped) = server_address.strip_prefix("tls://") {
-        let (host_str, port) = stripped.split_once(':').unwrap_or((stripped, "853"));
+        // Support optional SNI override via '@': tls://<host>[:port]@<sni>
+        let (host_part, sni_override) = match stripped.split_once('@') {
+            Some((left, right)) => (left, Some(right.to_string())),
+            None => (stripped, None),
+        };
+        let (host_str, port) = host_part.split_once(':').unwrap_or((host_part, "853"));
         let port_num: u16 = port.parse()?;
 
-        let tls_dns_name = if let Ok(ip) = host_str.parse::<IpAddr>() {
+        let tls_dns_name = if let Some(sni) = sni_override {
+            sni
+        } else if let Ok(ip) = host_str.parse::<IpAddr>() {
             match TLS_HOST_MAP.get() {
                 Some(cell) => {
                     let map = cell.read().await;
@@ -560,11 +567,18 @@ pub async fn build_resolver_for_server(
             NameServerConfigGroup::from_ips_tls(&ips, port_num, tls_dns_name, true),
         )
     } else if let Some(stripped) = server_address.strip_prefix("quic://") {
-        let (host_str, port) = stripped.split_once(':').unwrap_or((stripped, "853"));
+        // Support optional SNI override via '@': quic://<host>[:port]@<sni>
+        let (host_part, sni_override) = match stripped.split_once('@') {
+            Some((left, right)) => (left, Some(right.to_string())),
+            None => (stripped, None),
+        };
+        let (host_str, port) = host_part.split_once(':').unwrap_or((host_part, "853"));
         let port_num: u16 = port.parse()?;
 
         // Use TLS host mapping for QUIC as well when given an IP
-        let tls_dns_name = if let Ok(ip) = host_str.parse::<IpAddr>() {
+        let tls_dns_name = if let Some(sni) = sni_override {
+            sni
+        } else if let Ok(ip) = host_str.parse::<IpAddr>() {
             match TLS_HOST_MAP.get() {
                 Some(cell) => {
                     let map = cell.read().await;

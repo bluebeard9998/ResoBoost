@@ -85,7 +85,7 @@ export default function ServersModal({ open, onClose }: { open: boolean; onClose
           className="w-full h-80 rounded-md bg-[var(--panel)] border border-white/10 p-3 text-sm font-mono"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={`Enter one server per line.\nExamples:\n8.8.8.8\ntls://dns.google:853\nhttps://cloudflare-dns.com/dns-query`}
+          placeholder={`Enter one server per line.\nExamples:\n8.8.8.8\ntls://1.1.1.1@cloudflare-dns.com\nhttps://cloudflare-dns.com/dns-query`}
         />
         <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">

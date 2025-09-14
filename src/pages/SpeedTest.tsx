@@ -12,7 +12,7 @@ function copy(text: string) {
 }
 
 export default function SpeedTest() {
-  const [url, setUrl] = useState("https://cachefly.cachefly.net/1mb.test");
+  const [url, setUrl] = useState("");
   const [duration, setDuration] = useState(7);
   const [timeout, setTimeout] = useState(10);
   const [loading, setLoading] = useState(false);
@@ -55,12 +55,11 @@ export default function SpeedTest() {
 
   return (
     <div className="flex-1 p-4">
-      <h2 className="text-2xl font-semibold mb-3">Download File Address</h2>
       <div className="glass rounded-xl p-4 mb-4">
         <div className="flex flex-wrap items-center gap-3">
           <input
             className="input"
-            placeholder="HTTP/HTTPS file url"
+            placeholder="HTTP/HTTPS file url (e.g. http(s)://cachefly.cachefly.net/10mb.test)"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
           />
