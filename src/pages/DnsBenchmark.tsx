@@ -65,7 +65,7 @@ export default function DnsBenchmark() {
             onChange={e => setDomain(e.target.value)}
           />
         </div>
-        <div className="mt-4 grid grid-cols-3 items-center gap-3">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 items-center gap-3">
           <div className="flex items-center gap-3">
             <span className="text-sm text-[var(--muted)]">Samples</span>
             <Stepper value={samples} onChange={setSamples} min={1} aria-label="Samples" />
@@ -82,7 +82,7 @@ export default function DnsBenchmark() {
         </div>
 
         {/* Options */}
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-6">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-4 md:gap-6 text-sm">
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -151,4 +151,3 @@ export default function DnsBenchmark() {
     </div>
   );
 }
-

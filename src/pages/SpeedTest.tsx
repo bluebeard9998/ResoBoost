@@ -64,7 +64,7 @@ export default function SpeedTest() {
             onChange={(e) => setUrl(e.target.value)}
           />
         </div>
-        <div className="mt-4 grid grid-cols-3 items-center">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 items-center gap-3">
           <div className="flex items-center gap-3">
             <span className="text-sm text-[var(--muted)]">Per-DNS Duration (s)</span>
             <Stepper value={duration} onChange={setDuration} min={1} aria-label="Duration seconds" />
