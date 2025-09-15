@@ -100,7 +100,7 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install frontend deps
-        run: bun install --frozen-lockfile
+        run: bun install
 
       # Rust toolchain + Android targets
       - name: Install Rust
