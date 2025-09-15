@@ -43,7 +43,7 @@ Most “speed test” websites only check your current resolver or CDN connectio
 ### Prerequisites
 - Rust (stable)
 - Node.js ≥ 16 (v18+ recommended)
-- npm (bundled) or your preferred package manager
+- bun (bundled) or your preferred package manager
 > Windows: install MSVC build tools.
 > Linux: ensure Tauri deps like libwebkit2gtk and openssl dev headers are installed (see Tauri docs).
 > macOS: Xcode command-line tools.
@@ -54,12 +54,12 @@ git clone https://github.com/bluebeard9998/ResoBoost.git
 cd ResoBoost
 
 # install JS dependencies
-npm install
+bun install
    ```
 ### Run in Development
    ```bash
 # start the UI + Rust back-end in dev mode
-npm run tauri dev
+bun run tauri dev
    ```
 ## Configuration
 Most options are set via the UI, but the following environment variable can be useful during development:
