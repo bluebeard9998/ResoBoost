@@ -1,7 +1,6 @@
   publish-android:
     name: Build Android (Tauri)
     runs-on: ubuntu-22.04
-    needs: publish-tauri   # wait for the desktop release draft (optional but handy)
     permissions:
       contents: write
     steps:
