@@ -89,7 +89,7 @@ export default function DnsBenchmark() {
               checked={dnssec}
               onChange={e => setDnssec(e.target.checked)}
             />
-            <span className="text-sm">Validate DNSSEC (slower benchmark but accurate)</span>
+            <span className="text-sm">Validate DNSSEC (slower benchmark but accurate metrics)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
