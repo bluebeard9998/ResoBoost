@@ -58,6 +58,83 @@ jobs:
           tagName: app-v__VERSION__
           releaseName: 'App v__VERSION__'
           releaseBody: 'See the assets to download this version and install.'
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+  publish-android:
+    name: Build Android (Tauri)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Java for Gradle (17 recommended)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Android SDK (action sets ANDROID_SDK_ROOT/ANDROID_HOME)
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # we’ll install specific packages with sdkmanager below
+          packages: ''
+
+      # Install required SDK/NDK/CMake + accept licenses
+      - name: Install Android packages
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" || true
+          # Try newest stable NDK first; fall back to a widely used r26.x if needed
+          sdkmanager --install "ndk;26.3.11579264" || sdkmanager --install "ndk;26.1.10909125"
+          yes | sdkmanager --licenses >/dev/null
+          echo "SDK: $ANDROID_SDK_ROOT"
+          ls -la "$ANDROID_SDK_ROOT/ndk" || true
+          # Export ANDROID_NDK_HOME for tools that still rely on it
+          echo "ANDROID_NDK_HOME=$(ls -d $ANDROID_SDK_ROOT/ndk/* | head -n1)" >> "$GITHUB_ENV"
+
+      # Bun (your repo uses Bun)
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend deps
+        run: bun install --frozen-lockfile
+
+      # Rust toolchain + Android targets
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Add Rust Android targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      # Optional: Gradle cache for faster builds
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      # Sanity check: ensure the Android project exists
+      - name: Check Android project exists
+        run: |
+          test -d src-tauri/gen/android || { 
+            echo "::error::Missing src-tauri/gen/android. Run 'tauri android init' locally and commit the generated project."; 
+            exit 1; 
+          }
+
+      # Build APKs (per ABI). Use --aab if you need Play Store bundles.
+      - name: Build APKs
+        env:
+          RUST_BACKTRACE: 1
+          TAURI_CLI_LOG: trace
+        run: bunx tauri android build -- --apk --split-per-abi
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: |
+            src-tauri/gen/android/app/build/outputs/**/*.apk
+            src-tauri/gen/android/app/build/outputs/**/*.aab
+          releaseBody: 'See the assets to download this version and install.'
+          releaseDraft: false
+          prerelease: false
