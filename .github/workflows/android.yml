@@ -1,0 +1,68 @@
+  publish-android:
+    name: Build Android (Tauri)
+    runs-on: ubuntu-22.04
+    needs: publish-tauri   # wait for the desktop release draft (optional but handy)
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Java (Gradle requires >=11; 17 is safe)
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Android SDK + NDK
+      - name: Setup Android SDK/NDK
+        uses: android-actions/setup-android@v3
+
+      # Install Node deps (use npm/pnpm if that's your choice)
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'yarn'
+      - name: Install frontend deps
+        run: yarn install
+
+      # Rust + Android targets
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Add Rust Android targets
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+      # Build Android (APK per ABI; change to --aab if you want a Play-ready bundle)
+      - name: Build APKs
+        run: |
+          npx tauri android build -- --apk --split-per-abi
+        # If you have @tauri-apps/cli in devDependencies, you can use:
+        # yarn tauri android build -- --apk --split-per-abi
+
+      # Collect artifacts produced by Gradle
+      - name: Upload build outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: |
+            src-tauri/gen/android/app/build/outputs/**/*.apk
+            src-tauri/gen/android/app/build/outputs/**/*.aab
+          if-no-files-found: warn
+
+      # OPTIONAL: attach to the same draft release tag as tauri-action
+      - name: Read app version from Tauri config
+        id: version
+        run: |
+          VER=$(jq -r '.version // .app.version' src-tauri/tauri.conf.json)
+          echo "version=$VER" >> $GITHUB_OUTPUT
+      - name: Upload APK/AAB to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v${{ steps.version.outputs.version }}
+          files: |
+            src-tauri/gen/android/app/build/outputs/**/*.apk
+            src-tauri/gen/android/app/build/outputs/**/*.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
