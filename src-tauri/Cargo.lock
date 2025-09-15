@@ -3561,6 +3561,7 @@ dependencies = [
  "idna 0.5.0",
  "lazy_static",
  "once_cell",
+ "openssl-sys",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
