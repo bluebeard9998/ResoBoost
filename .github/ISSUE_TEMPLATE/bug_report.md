@@ -1,21 +1,3 @@
-
----
-
-name: Bug report
-about: File a bug to help us improve ResoBoost
-title: "\[BUG] "
-labels: bug, needs-triage
-assignees: ""
--------------
-
-<!--
-Thanks for taking the time to report a bug! A clear report helps us fix things faster.
-Please search existing issues/discussions before filing a new one.
-Do NOT include secrets, tokens, or personal data in your report.
-For security vulnerabilities, DO NOT open an issue — use the Security tab's private report
-or email ednoct@proton.me (optionally with your PGP).
--->
-
 ### Checklist
 
 * [ ] I have searched **existing issues** and **discussions** for duplicates.
@@ -101,10 +83,3 @@ What actually happened (include full error text where possible).
 * **Contact email (optional)**: (we may reach out if we need more info)
 * **Willing to submit a PR?** (Yes/No/Maybe with guidance)
 * **Area**: \[ ] Core  \[ ] CLI  \[ ] API  \[ ] Docs  \[ ] Build/CI  \[ ] Packaging  \[ ] Performance
-
-<!--
-Triage notes (maintainers):
-- Confirm repro; label with area + severity.
-- Link advisory if the issue has security implications.
-- If repro requires private data, request a sanitised example.
--->
