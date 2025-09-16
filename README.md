@@ -1,7 +1,10 @@
 # ResoBoost – DNS & Download Benchmark App
-
-![License MIT](https://img.shields.io/badge/license-MIT-blue.svg)  
-
+  [![Release](https://img.shields.io/github/v/release/ednoct/ResoBoost)](https://github.com/ednoct/ResoBoost/releases)
+  ![License MIT](https://img.shields.io/badge/license-MIT-blue.svg)  
+  [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/ednoct/ResoBoost/releases)
+  [![Tauri](https://img.shields.io/badge/Tauri-2.0-blue.svg)](https://tauri.app/)
+  [![React](https://img.shields.io/badge/React-19.1-blue.svg)](https://reactjs.org/)
+  [![Rust](https://img.shields.io/badge/Rust-1.89.0-orange.svg)](https://www.rust-lang.org/)
 **ResoBoost** is a cross-platform network performance tool built with **Tauri** (Rust back-end) and a **React + TypeScript + Vite + Tailwind CSS** front-end. It benchmarks DNS resolvers and download speeds, producing metrics such as average latency, jitter, success rate, DNSSEC validation, and per-server bandwidth.
 
 ---
