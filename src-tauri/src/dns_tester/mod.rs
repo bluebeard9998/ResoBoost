@@ -31,7 +31,7 @@ pub fn init_configs() {
 
     // Kick off remote updates in background to avoid blocking startup
     let dns_list_url =
-        "https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/main/servers.txt".to_string();
+        "https://raw.githubusercontent.com/ednoct/DNS_SERVERS/main/servers.txt".to_string();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = update_servers_from_url(&dns_list_url).await {
             warn!("Could not update DNS servers from URL: {}", e);

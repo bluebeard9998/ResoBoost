@@ -48,8 +48,8 @@ export default function ServersModal({ open, onClose }: { open: boolean; onClose
     setLoading(true); setError(null);
     try {
       const urls = [
-        "https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/refs/heads/main/servers.txt",
-        "https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/main/servers.txt",
+        "https://raw.githubusercontent.com/ednoct/DNS_SERVERS/refs/heads/main/servers.txt",
+        "https://raw.githubusercontent.com/ednoct/DNS_SERVERS/main/servers.txt",
       ];
       let ok = false;
       for (const u of urls) {
@@ -91,27 +91,27 @@ export default function ServersModal({ open, onClose }: { open: boolean; onClose
           <div className="flex items-center gap-2 flex-wrap">
             <button
               className="btn bg-white/10 hover:bg-white/20"
-              onClick={() => loadFrom("https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/refs/heads/main/udp-tcp.txt")}
+              onClick={() => loadFrom("https://raw.githubusercontent.com/ednoct/DNS_SERVERS/refs/heads/main/udp-tcp.txt")}
               disabled={loading}
             >UDP/TCP</button>
             <button
               className="btn bg-white/10 hover:bg-white/20"
-              onClick={() => loadFrom("https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/refs/heads/main/DoH.txt")}
+              onClick={() => loadFrom("https://raw.githubusercontent.com/ednoct/DNS_SERVERS/refs/heads/main/DoH.txt")}
               disabled={loading}
             >DoH</button>
             <button
               className="btn bg-white/10 hover:bg-white/20"
-              onClick={() => loadFrom("https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/refs/heads/main/DoT.txt")}
+              onClick={() => loadFrom("https://raw.githubusercontent.com/ednoct/DNS_SERVERS/refs/heads/main/DoT.txt")}
               disabled={loading}
             >DoT</button>
             <button
               className="btn bg-white/10 hover:bg-white/20"
-              onClick={() => loadFrom("https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/refs/heads/main/DoQ.txt")}
+              onClick={() => loadFrom("https://raw.githubusercontent.com/ednoct/DNS_SERVERS/refs/heads/main/DoQ.txt")}
               disabled={loading}
             >DoQ</button>
             <button
               className="btn bg-white/10 hover:bg-white/20"
-              onClick={() => loadFrom("https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/refs/heads/main/iran.txt")}
+              onClick={() => loadFrom("https://raw.githubusercontent.com/ednoct/DNS_SERVERS/refs/heads/main/iran.txt")}
               disabled={loading}
             >Iran Only</button>
             <button className="btn bg-white/10 hover:bg-white/20" onClick={loadDefault} disabled={loading}>{loading ? "Loading…" : "Default"}</button>

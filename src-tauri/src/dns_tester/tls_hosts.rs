@@ -16,7 +16,7 @@ pub fn init_tls_hosts() {
 
 pub async fn update_tls_hosts_from_url() -> Result<(), reqwest::Error> {
     // Remote file format: "host ip" per line.
-    let url = "https://raw.githubusercontent.com/bluebeard9998/DNS_SERVERS/main/tls-host-map.txt";
+    let url = "https://raw.githubusercontent.com/ednoct/DNS_SERVERS/main/tls-host-map.txt";
     let client = Client::new();
     let response = client.get(url).send().await?.text().await?;
 

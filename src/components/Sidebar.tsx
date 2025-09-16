@@ -33,7 +33,7 @@ export default function Sidebar({ current, onChange }: { current: NavKey; onChan
       </div>
       <div className="mt-auto pt-4 flex justify-center">
         <a
-          href="https://github.com/bluebeard9998"
+          href="https://github.com/ednoct"
           target="_blank"
           rel="noreferrer"
           className="group inline-flex items-center gap-2 px-3 py-2 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white shadow-sm hover:shadow-md transition"
