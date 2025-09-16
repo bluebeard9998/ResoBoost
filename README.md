@@ -1,6 +1,6 @@
 # ResoBoost – DNS & Download Benchmark App
 <div align="center">
-    <img href="" src="public/Logo-github.png" alt="ResoBoost Logo" width="231" height="231">
+    <img src="public/Logo-github.png" alt="ResoBoost Logo" width="231" height="231">
 
   [![Release](https://img.shields.io/github/v/release/ednoct/ResoBoost)](https://github.com/ednoct/ResoBoost/releases)
   ![License MIT](https://img.shields.io/badge/license-MIT-blue.svg)  
