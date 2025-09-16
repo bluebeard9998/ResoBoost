@@ -113,8 +113,6 @@ If you discover a security vulnerability (for example in the DNS resolution logi
 If this project has helped you, consider a crypto donation.  
 Every bit keeps the lights on and the code humming.
 
-## Crypto
-
 | Coin | Address |
 |---|---|
 | **Bitcoin (BTC)** | `1HDsbDpY9dJXrrvLy3rJMm2BZd7zvF9Erw` |
