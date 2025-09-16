@@ -120,7 +120,7 @@ Every bit keeps the lights on and the code humming.
 | **USDT (ERC-20 ETH)** | `0x66792127017a21C89Df9D0Eab43FFA625171edc7` |
 | **USDT (TRC-20 TRX)** | `TSXAWSiTaB55ncW6ettK32LBEc859Emsv2` |
 | **Tron (TRX)** | `TSXAWSiTaB55ncW6ettK32LBEc859Emsv2` |
-| **TON (TON)** | `EQBif0KSURTfRhyFtuglbstHO1GS_A2Pb-HPu--vn4VSRwU1` |
+| **Toncoin (TON)** | `EQBif0KSURTfRhyFtuglbstHO1GS_A2Pb-HPu--vn4VSRwU1` |
 | **Solana (SOL)** | `idRY4iwQQGZgzqKSzkmBGcsQjqDiy2ZcJyD1vg5TyVH` |
 | **Litecoin (LTC)** | `LYVzCp7jGazsScq6Mie3omFvj8pJqjzwTB` |
 | **Dogecoin (DOGE)** | `DFRVfM4AWYtaYTNg2TNfXLe2aHShnpL6CN` |
