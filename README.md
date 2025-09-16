@@ -108,6 +108,33 @@ Custom DNS server lists are fetched from the DNS_SERVERS repository on start and
 
 ## 🛡️ Security & Responsible Disclosure
 If you discover a security vulnerability (for example in the DNS resolution logic or Tauri packaging), please do not open a public issue. Instead, email the maintainer (see GitHub profile) with details. We appreciate responsible disclosure and will respond quickly.
+# ❤️ Support This Project
+
+If this project has helped you, consider a crypto donation.  
+Every bit keeps the lights on and the code humming.
+
+## Crypto
+
+| Coin | Address |
+|---|---|
+| **Bitcoin (BTC)** | `1HDsbDpY9dJXrrvLy3rJMm2BZd7zvF9Erw` |
+| **Ethereum (ETH)** | `0x66792127017a21C89Df9D0Eab43FFA625171edc7` |
+| **USDT (ERC-20 ETH)** | `0x66792127017a21C89Df9D0Eab43FFA625171edc7` |
+| **USDT (TRC-20 TRX)** | `TSXAWSiTaB55ncW6ettK32LBEc859Emsv2` |
+| **Tron (TRX)** | `TSXAWSiTaB55ncW6ettK32LBEc859Emsv2` |
+| **TON (TON)** | `EQBif0KSURTfRhyFtuglbstHO1GS_A2Pb-HPu--vn4VSRwU1` |
+| **Solana (SOL)** | `idRY4iwQQGZgzqKSzkmBGcsQjqDiy2ZcJyD1vg5TyVH` |
+| **Litecoin (LTC)** | `LYVzCp7jGazsScq6Mie3omFvj8pJqjzwTB` |
+| **Dogecoin (DOGE)** | `DFRVfM4AWYtaYTNg2TNfXLe2aHShnpL6CN` |
+
+### Notes
+- **No private keys—ever.** Commit only public receive addresses.
+- Prefer **self-custody** wallets over exchanges.
+- If you rotate addresses, update this file so supporters aren’t sending into the void.
+- Optional: use an ENS name (e.g., `yourname.eth`) to make ETH donations friendlier.
+
+## Thanks
+Your support keeps development steady and true. 🙏
 
 ## 🤝 Acknowledgements
 - [Tauri](https://tauri.app/), for providing a lightweight, secure application framework.  
