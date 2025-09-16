@@ -11,12 +11,12 @@
   
   </div>
   
-## Overview
+## ℹ️ Overview
 **ResoBoost** is a cross-platform network performance tool built with **Tauri** (Rust back-end) and a **React + TypeScript + Vite + Tailwind CSS** front-end. It benchmarks DNS resolvers and download speeds, producing metrics such as average latency, jitter, success rate, DNSSEC validation, and per-server bandwidth.
 
 ---
 
-## Why ResoBoost?
+## ❓ Why ResoBoost
 
 Most “speed test” websites only check your current resolver or CDN connection. **ResoBoost** lets you compare many DNS providers and measure download throughput via those servers on your own machine:
 
@@ -27,7 +27,7 @@ Most “speed test” websites only check your current resolver or CDN connectio
 
 ---
 
-## Features
+## 🎯 Features
 
 - 🚀 **Cross-platform desktop app** via Tauri (small footprint, fast startup).
 - 📊 **DNS benchmarking:** latency (median), jitter, success rate, DNSSEC status, and resolved IPs.
@@ -39,7 +39,7 @@ Most “speed test” websites only check your current resolver or CDN connectio
 
 ---
 
-## 📸 Screenshots
+## 📷 Screenshots
 
 | DNS Benchmark | Download Speed | Dns Servers |
 |-------------|----------------|-----------------|
@@ -47,7 +47,7 @@ Most “speed test” websites only check your current resolver or CDN connectio
 
 ---
 
-## Architecture
+## 🛠️ Architecture
 
 - The UI uses @tauri-apps/api to invoke commands in the Rust layer.
 
@@ -57,7 +57,7 @@ Most “speed test” websites only check your current resolver or CDN connectio
 
 ---
 
-## Quickstart (TTFS ≤ 5 minutes)
+## 🚀 Quickstart (TTFS ≤ 5 minutes)
 ### Prerequisites
 - Rust (stable)
 - Node.js ≥ 16 (v18+ recommended)
@@ -79,17 +79,17 @@ bun install
 # start the UI + Rust back-end in dev mode
 bun run tauri dev
    ```
-## Configuration
+## ⚙️ Configuration
 Most options are set via the UI, but the following environment variable can be useful during development:
 Custom DNS server lists are fetched from the DNS_SERVERS repository on start and can be refreshed or edited via Server Lists → Edit. You can load default sets for UDP/TCP, DoH, DoT, DoQ, or region-specific lists, or paste your own.
 
-## Integrations & Compatibility
+## 🖇️ Integrations & Compatibility
 - OS: Windows, macOS, Linux, android (Tauri)
 - Front-end: React 19, TypeScript, Vite 7, Tailwind CSS 4
 - Rust: Tauri 2, hickory-resolver, reqwest, tokio, serde
 - Extensibility: strongly-typed result objects; easy to integrate new pages/components or expose additional Tauri commands.
 
-## Troubleshooting / FAQ
+## 🤔 Troubleshooting / FAQ
 - “Network unavailable” errors → check firewall/VPN; the app needs outbound DNS/HTTP.
 - DNSSEC fails → not all resolvers support DNSSEC; try disabling it or use a DNSSEC-enabled resolver.
 - Custom servers won’t save → one server per line; supported forms include:
@@ -99,17 +99,17 @@ Custom DNS server lists are fetched from the DNS_SERVERS repository on start and
      - `quic://1.1.1.1:784@dns.cloudflare.com` (DoQ)
 - Low download speed → increase per-DNS test duration, pick a closer mirror, or verify your network path.
 
-## Roadmap
+## 💡 Roadmap
 -  Pre-built installers and auto-update support
 -  CLI mode for headless benchmarking / CI integration
 -  Additional metrics (packet loss, jitter distributions, upstream tests)
 - Tagging/favourites and better server list management
 - Built-in charts and historical comparisons
 
-## Security & Responsible Disclosure
+## 🛡️ Security & Responsible Disclosure
 If you discover a security vulnerability (for example in the DNS resolution logic or Tauri packaging), please do not open a public issue. Instead, email the maintainer (see GitHub profile) with details. We appreciate responsible disclosure and will respond quickly.
 
-## Acknowledgements
+## 🤝 Acknowledgements
 - [Tauri](https://tauri.app/), for providing a lightweight, secure application framework.  
 - [`hickory-resolver`](https://crates.io/crates/hickory-resolver) and [`reqwest`](https://crates.io/crates/reqwest), for enabling async DNS and HTTP operations.  
 - [Tailwind CSS](https://tailwindcss.com/) and [Vite](https://vitejs.dev/), for powering a modern, fast React front-end.  
