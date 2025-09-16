@@ -34,7 +34,6 @@ A clear and concise description of the problem.
 * **Install method**: (source | pip | container | other)
 * **OS**: (Linux/macOS/Windows + version)
 * **CPU/GPU**: (e.g., AMD Ryzen 7 / NVIDIA RTX 4070)
-* **Python**: (e.g., 3.11.x)
 * **Key deps**: (e.g., torch/cuda versions, driver/runtime details if applicable)
 
 ### Steps to Reproduce
