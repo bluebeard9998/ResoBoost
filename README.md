@@ -6,7 +6,7 @@
   [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](https://github.com/ednoct/ResoBoost/releases)
   [![Tauri](https://img.shields.io/badge/Tauri-2.0-blue.svg)](https://tauri.app/)
   [![React](https://img.shields.io/badge/React-19.1-blue.svg)](https://reactjs.org/)
-  [![Rust](https://img.shields.io/badge/Rust-1.89.0-orange.svg)](https://www.rust-lang.org/)
+  [![Rust](https://img.shields.io/badge/Rust-1.89.0-blue.svg)](https://www.rust-lang.org/)
   
   </div>
   
