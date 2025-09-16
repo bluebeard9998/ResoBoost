@@ -2,7 +2,7 @@
 
 name: Bug report
 about: File a bug to help us improve ResoBoost
-title: "\[BUG] "
+title: "[BUG] "
 labels: bug, needs-triage
 assignees: ""
 -------------
