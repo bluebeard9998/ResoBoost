@@ -38,6 +38,14 @@ Most “speed test” websites only check your current resolver or CDN connectio
 
 ---
 
+## 📸 Screenshots
+
+| DNS Benchmark | Download Speed | Dns Servers |
+|-------------|----------------|-----------------|
+| ![DNS Benchmark](Screenshots/DnsBenchmark.png) | ![Download Speed](Screenshots/SpeedTest.png) | ![Dns Servers](Screenshots/ServersModal.png) |
+
+---
+
 ## Architecture
 
 - The UI uses @tauri-apps/api to invoke commands in the Rust layer.
